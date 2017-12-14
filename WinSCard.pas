@@ -691,7 +691,7 @@ type
 // CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED
 // CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED
 
-   function SCardGetStatusChangeW(hContext: LongInt; dwTimeout: LongInt; var rgReaderStates: PSCARD_READERSTATEW;
+   function SCardGetStatusChangeW(hContext: LongInt; dwTimeout: LongInt; var rgReaderStates: array of SCARD_READERSTATEW;
                                   cReaders: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardGetStatusChangeW}
    function SCardCancel (hContext: LongInt): LongInt; stdcall;

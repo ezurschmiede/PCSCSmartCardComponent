@@ -51,9 +51,8 @@ uses
 type
   TErrSource         = (esInit, esConnect, esGetStatus, esTransmit);
   TNeededPIN         = (npPIN1, npPIN2, npPUK1, npPUK2);
-  TDelimiters        = set of Char;
 
-  TPCSCErrorEvent    = procedure(Sender: TObject; ErrSource: TErrSource; ErrCode: cardinal) of object;
+  TPCSCErrorEvent    = procedure(Sender: TObject; ErrSource: TErrSource; ErrCode: LongInt) of object;
   TPCSCPinEvent      = procedure(Sender: TObject; NeedPIN: TNeededPIN) of object;
 
 const
@@ -68,17 +67,17 @@ const
 
   WM_CARDSTATE     = WM_USER + 42;
 
-  GSMStatusOK           = $9000;
-  GSMStatusMemoryError  = $9240;
-  GSMStatusNoEFSelected = $9400;
-  GSMStatusOutOfRange   = $9402;
-  GSMStatusNotFound     = $9404;
-  GSMStatusFCDoNotMatch = $9408;
-  GSMStatusCHVNeeded    = $9802;
-  GSMStatusAuthFailed   = $9804;
-  GSMStatusAuthFailedBl = $9840;
-  GSMStatusTechProblem  = $6F00;
-  GSMStatusResponseData = $9F;
+  CardStatusOK           = $9000;
+  CardStatusMemoryError  = $9240;
+  CardStatusNoEFSelected = $9400;
+  CardStatusOutOfRange   = $9402;
+  CardStatusNotFound     = $9404;
+  CardStatusFCDoNotMatch = $9408;
+  CardStatusCHVNeeded    = $9802;
+  CardStatusAuthFailed   = $9804;
+  CardStatusAuthFailedBl = $9840;
+  CardStatusTechProblem  = $6F00;
+  CardStatusResponseData = $9F;
 
   GSMFileTypeRFU = 0;
   GSMFileTypeMF  = 1;
@@ -90,205 +89,159 @@ const
   GSMEfCyclic    = 3;
 
 type
-  TPCSCConnector = class(TComponent)
+  TPCSCConnector = class;
 
+  TReaderWatcher = class(TThread)
+  private
+    FOwner: TPCSCConnector;
   protected
-    FContext            : cardinal;
-    FCardHandle         : integer;
-    FConnected          : boolean;
-    FNumReaders         : integer;
-    FUseReaderNum       : integer;
-    FReaderList         : TStringlist;
-    FAttrProtocol       : integer;
-    FAttrICCType        : string;
-    FAttrCardATR        : string;
-    FAttrVendorName     : string;
-    FAttrVendorSerial   : string;
-    FGSMCurrentFile     : string;
-    FGSMFileInfo        : string;
-    FGSMDirInfo         : string;
-    FGSMVoltage30       : boolean;
-    FGSMVoltage18       : boolean;
+    procedure Execute; override;
+  public
+    constructor Create(AOwner: TPCSCConnector);
 
-    FOnReaderWaiting    : TNotifyEvent;
-    FOnReaderListChange : TNotifyEvent;
-    FOnCardInserted     : TNotifyEvent;
-    FOnCardActive       : TNotifyEvent;
-    FOnCardRemoved      : TNotifyEvent;
-    FOnCardInvalid      : TNotifyEvent;
-    FOnError            : TPCSCErrorEvent;
-    FOnCHVNeeded        : TPCSCPinEvent;
+  end;
 
-    procedure SetReaderNum(Value: integer);
+  TPCSCConnector = class(TComponent)
+  private
+    FContext: cardinal;
+    FCardHandle: LongInt;
+    FSelectedReaderIndex: integer;
+    FReaderList: TStringlist;
+    FAttrProtocol: integer;
+    FAttrICCType: string;
+    FAttrCardATR: string;
+    FAttrVendorName: string;
+    FAttrVendorSerial: string;
+    FCurrentFile: string;
+    FFileInfo: string;
+    FDirInfo: string;
+    FVoltage30: boolean;
+    FVoltage18: boolean;
+    FOnReaderWaiting: TNotifyEvent;
+    FOnReaderListChange: TNotifyEvent;
+    FOnCardInserted: TNotifyEvent;
+    FOnCardActive: TNotifyEvent;
+    FOnCardRemoved: TNotifyEvent;
+    FOnCardInvalid: TNotifyEvent;
+    FOnError: TPCSCErrorEvent;
+    FOnCHVNeeded: TPCSCPinEvent;
+    FReaderWatcher: TReaderWatcher;
+    FActReaderState : cardinal;
+    FLastReaderState: cardinal;
+    FNotifyHandle: HWND;
+    FCommandCls: Byte;
+    procedure SetSelectedReaderIndex(Value: integer);
     procedure MessageWndProc(var Msg: TMessage);
-    function  ConnectSelectedReader: boolean;
+    function  ConnectCardInSelectedReader: boolean;
     procedure ProcessReaderState(const OldState,NewState: cardinal);
     procedure GetReaderAttributes;
     procedure GetCardAttributes;
     procedure ClearReaderAttributes;
     procedure ClearCardAttributes;
-    function  IsReaderOpen: boolean;
-    function  GetReaderState: cardinal;
+    function IsReaderOpen: boolean;
+    function GetReaderState: cardinal;
     procedure CloseAndDisconnect;
     procedure CardInsertedAction;
     procedure CardActiveAction;
     procedure CardRemovedAction;
-
+    function GetIsCardConnected: boolean;
+    procedure ReleaseContext;
+    procedure DoOnTerminateWatcher(Sender: TObject);
+    function GetSelectedReaderName: String;
+    procedure ResetReaderStatVars;
   public
     constructor Create(AOwner: TComponent); override;
-    destructor  Destroy; override;
-    function    Init: boolean;
-    function    Open: boolean;
-    procedure   Close;
-    function    Connect: boolean;
-    procedure   Disconnect;
-    function    GetResponseFromCard(const apdu: string): string; overload;
-    function    GetResponseFromCard(const command: string; var data: string; var sw1, sw2: byte): boolean; overload;
+    destructor Destroy; override;
 
-    function    GSMStatus: integer;
-    function    GSMSelect(const FileID: string): integer;
-    function    GSMReadBinary(const Offset, Length: integer; var Data: string): integer;
+    function Init: boolean; // init once to fetch reader list and init component or call to check for new connected/disconnected readers
 
+    function Open: boolean; // open selected reader device
+    procedure Close;
+
+    procedure ConnectCard; // connect inserted card
+    procedure DisconnectCard;
+
+    function GetResponseFromCard(const apdu: RawByteString): RawByteString; overload;
+    function GetResponseFromCard(const command: RawByteString; var data: RawByteString; var sw1, sw2: byte): boolean; overload;
+
+    function CardStatus: integer;
+    function SelectFile(const FileID: RawByteString): integer;
+    function ReadBinary(const Offset, Length: integer; out Data: RawByteString): integer;
   published
-    property UseReaderNum: integer    read FUseReaderNum    write SetReaderNum  default -1;
+    property SelectedReaderIndex: integer read FSelectedReaderIndex write SetSelectedReaderIndex default -1;
+    property SelectedReaderName: String read GetSelectedReaderName;
 
-    property OnCardInserted:     TNotifyEvent    read FOnCardInserted     write FOnCardInserted;
-    property OnCardActive:       TNotifyEvent    read FOnCardActive       write FOnCardActive;
-    property OnCardRemoved:      TNotifyEvent    read FOnCardRemoved      write FOnCardRemoved;
-    property OnCardInvalid:      TNotifyEvent    read FOnCardInvalid      write FOnCardInvalid;
-    property OnReaderWaiting:    TNotifyEvent    read FOnReaderWaiting    write FOnReaderWaiting;
-    property OnReaderListChange: TNotifyEvent    read FOnReaderListChange write FOnReaderListChange;
-    property OnError:            TPCSCErrorEvent read FOnError            write FOnError;
-    property OnCHVNeeded:        TPCSCPinEvent   read FOnCHVNeeded        write FOnCHVNeeded;
+    property OnCardInserted: TNotifyEvent read FOnCardInserted write FOnCardInserted;
+    property OnCardActive: TNotifyEvent read FOnCardActive write FOnCardActive;
+    property OnCardRemoved: TNotifyEvent read FOnCardRemoved write FOnCardRemoved;
+    property OnCardInvalid: TNotifyEvent read FOnCardInvalid write FOnCardInvalid;
+    property OnReaderWaiting: TNotifyEvent read FOnReaderWaiting write FOnReaderWaiting;
+    property OnReaderListChange: TNotifyEvent read FOnReaderListChange write FOnReaderListChange;
+    property OnError: TPCSCErrorEvent read FOnError write FOnError;
+    property OnCHVNeeded: TPCSCPinEvent read FOnCHVNeeded write FOnCHVNeeded;
 
-    property ReaderList:       TStringList read FReaderList;
-    property NumReaders:       integer     read FNumReaders;
-    property Connected:        boolean     read FConnected;
-    property Opened:           boolean     read IsReaderOpen;
-    property ReaderState:      cardinal    read GetReaderState;
-    property AttrProtocol:     integer     read FAttrProtocol;
-    property AttrICCType:      string      read FAttrICCType;
-    property AttrCardATR:      string      read FAttrCardATR;
-    property AttrVendorName:   string      read FAttrVendorName;
-    property AttrVendorSerial: string      read FAttrVendorSerial;
-    property GSMCurrentFile:   string      read FGSMCurrentFile;
-    property GSMFileInfo:      string      read FGSMFileInfo;
-    property GSMDirInfo:       string      read FGSMDirInfo;
-    property GSMVoltage30:     boolean     read FGSMVoltage30;
-    property GSMVoltage18:     boolean     read FGSMVoltage18;
+    // EZ - bei CH Krankenkassenkarten funktioniert CLS $A0 nicht, es muss $00 sein. (CLS ist das erste Byte des Commands)
+    property CommandCls: Byte read FCommandCls write FCommandCls default 0;
+
+    property ReaderList: TStringList read FReaderList;
+    property CardConnected: boolean read GetIsCardConnected;
+    property Opened: Boolean read IsReaderOpen;
+    property ReaderState: Cardinal read GetReaderState;
+    property AttrProtocol: Integer read FAttrProtocol;
+    property AttrICCType: String read FAttrICCType;
+    property AttrCardATR: String read FAttrCardATR;
+    property AttrVendorName: String read FAttrVendorName;
+    property AttrVendorSerial: String read FAttrVendorSerial;
+    property CurrentFile: String read FCurrentFile;
+    property FileInfo: String read FFileInfo;
+    property DirInfo: String read FDirInfo;
+    property Voltage30: Boolean read FVoltage30;
+    property Voltage18: Boolean read FVoltage18;
   end;
 
 procedure Register;
 
 implementation
 
-var
-  ActReaderState  : cardinal;
-  LastReaderState : cardinal;
-  SelectedReader  : PChar;
-  ReaderOpen      : boolean;
-  NotifyHandle    : HWND;
-
 const
+  GCGetStatus   = RawByteString(#$F2#$00#$00#$16);
+  GCGetResponse = RawByteString(#$C0#$00#$00);
+  GCSelectFile  = RawByteString(#$A4#$00#$00);
+  GCReadBinary  = RawByteString(#$B0);
 
-  // GSM Commands
-  GCGetStatus   = #$A0#$F2#$00#$00#$16;
-  GCGetResponse = #$A0#$C0#$00#$00;
-  GCSelectFile  = #$A0#$A4#$00#$00#$02;
-  GCReadBinary  = #$A0#$B0;
-
-  GSMMasterFile  = #$3f#$00;
-  DFgsm900       = #$7f#$20;
-  DFgsm1800      = #$7f#$21;
+  MasterFileFID  = RawByteString(#$3f#$00);
+  DFgsm900       = RawByteString(#$7f#$20);
+  DFgsm1800      = RawByteString(#$7f#$21);
 
 procedure Register;
 begin
   RegisterComponents('More...', [TPCSCConnector]);
 end;
 
-function SortOutSubstrings(const From:string; var t:array of string; const Delim:TDelimiters = [' ',';']; const ConcatDelim:boolean = true):integer;
-var a,b,s,i : integer;
-    sep     : boolean;
-begin
-a := 1;
-b := Low(t);
-s := 1;
-i := 0;
-sep := ConcatDelim;
-t[b] := '';
-
-while a <= Length(From) do
-  begin
-  if not (From[a] in Delim) then
-     begin
-     Inc(i);
-     sep := false;
-     end else
-     begin
-     if not sep then
-        begin
-        t[b] := Copy(From, s, i);
-        Inc(b);
-        if b > High(t) then Break;
-        t[b] := '';
-        end;
-     if ConcatDelim then sep := true;
-     s := a + 1;
-     i := 0;
-     end;
-  Inc(a);
-  end;
-if (b <= High(t)) and (i > 0) then
-   begin
-   t[b] := Copy(From, s, i);
-   Inc(b);
-   end;
-for a := b + 1 to High(t) do t[a] := '';
-Result := b;
-end;
-
 function OrdD(const From: string; const Index: integer): integer;
 begin
-if Index <= Length(From) then Result := Ord(From[Index])
-                         else Result := 0;
-end;
-
-function CardWatcherThread(PContext: pointer): integer;
-var
-  RetVar   : cardinal;
-  RContext : cardinal;
-  RStates  : array[0..1] of SCARD_READERSTATEA;
-begin
-  try
-  RContext := cardinal(PContext^);
-  FillChar(RStates,SizeOf(RStates),#0);
-  RStates[0].szReader     := SelectedReader;
-  RStates[0].pvUserData   := nil;
-  RStates[0].dwEventState := ActReaderState;
-  while ReaderOpen do
-    begin
-    RStates[0].dwCurrentState := RStates[0].dwEventState;
-    RetVar := SCardGetStatusChangeA(RContext, -1, RStates, 1);
-    ActReaderState := RStates[0].dwEventState;
-    PostMessage(NotifyHandle, WM_CARDSTATE, RetVar, 0);
-    end;
-  finally
+  if Index <= Length(From) then
+    Result := Ord(From[Index])
+  else
     Result := 0;
-  end;
 end;
 
 procedure TPCSCConnector.MessageWndProc(var Msg: TMessage);
 begin
   if (Msg.Msg = WM_CARDSTATE) then
-    begin
+  begin
     if Msg.WParam <> SCARD_S_SUCCESS then
-      if Assigned(FOnError) then FOnError(Self, esGetStatus, Msg.WParam);
-    if ActReaderState <> LastReaderState then
-      begin
-      ProcessReaderState(LastReaderState, ActReaderState);
-      end;
-    end
-    else Msg.Result := DefWindowProc(NotifyHandle, Msg.Msg, Msg.WParam, Msg.LParam);
+    begin
+      if Assigned(FOnError) then
+        FOnError(Self, esGetStatus, Msg.WParam);
+    end;
+
+    if FActReaderState <> FLastReaderState then
+    begin
+      ProcessReaderState(FLastReaderState, FActReaderState);
+    end;
+  end else
+    Msg.Result := DefWindowProc(FNotifyHandle, Msg.Msg, Msg.WParam, Msg.LParam);
 end;
 
 constructor TPCSCConnector.Create(AOwner: TComponent);
@@ -297,269 +250,356 @@ begin
   FReaderList   := TStringlist.Create;
   FContext      := 0;
   FCardHandle   := 0;
-  FNumReaders   := 0;
-  FUseReaderNum := -1;
-  FConnected    := false;
-  ActReaderState  := SCARD_STATE_UNAWARE;
-  LastReaderState := SCARD_STATE_UNAWARE;
-  ReaderOpen      := false;
+  FCommandCls := 0;
+  FSelectedReaderIndex := -1;
+
+  FReaderWatcher := nil;
+  ResetReaderStatVars;
+
   ClearReaderAttributes;
   ClearCardAttributes;
-  if not (csDesigning in ComponentState) then NotifyHandle := AllocateHWnd(MessageWndProc);
+
+  FNotifyHandle := 0;
+end;
+
+procedure TPCSCConnector.ResetReaderStatVars;
+begin
+  FActReaderState  := SCARD_STATE_UNAWARE;
+  FLastReaderState := SCARD_STATE_UNAWARE;
+end;
+
+procedure TPCSCConnector.ReleaseContext;
+begin
+  if SCardIsValidContext(FContext) = SCARD_S_SUCCESS then
+  begin
+    SCardReleaseContext(FContext);
+  end;
+
+  FContext := 0;
 end;
 
 destructor TPCSCConnector.Destroy;
 begin
   CloseAndDisconnect;
-  SCardReleaseContext(FContext);
+  ReleaseContext;
+
   FReaderList.Free;
-  if not (csDesigning in ComponentState) then DeallocateHWnd(NotifyHandle);
+
+  if (FNotifyHandle <> 0) then
+    DeallocateHWnd(FNotifyHandle);
+
   inherited Destroy;
 end;
 
 function TPCSCConnector.Init: boolean;
 var
-  RetVar         : cardinal;
-  ReaderList     : string;
-  ReaderListSize : integer;
-  v              : array[0..MAXIMUM_SMARTCARD_READERS] of string;
-  i              : integer;
-
+  RetVar: cardinal;
+  ReaderList: string;
+  ReaderListSize: integer;
+  i: integer;
 begin
-  Result      := false;
-  FNumReaders := 0;
+  Result := false;
+
+  if (not (csDesigning in ComponentState)) and (FNotifyHandle = 0) then
+    FNotifyHandle := AllocateHWnd(MessageWndProc);
+
   CloseAndDisconnect;
-  if SCardIsValidContext(FContext) = SCARD_S_SUCCESS then SCardReleaseContext(FContext);
+  ReleaseContext;
+
   RetVar := SCardEstablishContext(SCARD_SCOPE_USER, nil, nil, @FContext);
+
   if RetVar = SCARD_S_SUCCESS then
-    begin
+  begin
     ReaderListSize := 0;
-    RetVar := SCardListReadersA(FContext, nil, nil, ReaderListSize);
+    RetVar := SCardListReadersW(FContext, nil, nil, ReaderListSize);
+
     if RetVar = SCARD_S_SUCCESS then
-      begin
+    begin
       SetLength(ReaderList, ReaderListSize);
-      SCardListReadersA(FContext, nil, Pointer(ReaderList), ReaderListSize);
-      FReaderList.Clear;
-      SortOutSubstrings(ReaderList,v,[#0]);
-      for i := 0 to MAXIMUM_SMARTCARD_READERS do
-        if v[i] <> '' then FReaderList.Add(v[i]);
-      FNumReaders := FReaderList.Count;
-      if FNumReaders > 0 then
-        begin
-        if Assigned(FOnReaderListChange) then FOnReaderListChange(Self);
+      SCardListReadersW(FContext, nil, PChar(ReaderList), ReaderListSize);
+
+      FReaderList.Delimiter := #0;
+      FReaderList.StrictDelimiter := true;
+      FReaderList.DelimitedText := ReaderList;
+
+      for i := FReaderList.Count-1 downto 0 do
+      begin
+        if FReaderList[i] = '' then
+          FReaderList.Delete(i);
+      end;
+
+      if FReaderList.Count > 0 then
+      begin
+        if Assigned(FOnReaderListChange) then
+          FOnReaderListChange(Self);
+
         Result := true;
-        end;
-      end else if Assigned(FOnError) then FOnError(Self, esInit, RetVar);
-    end else if Assigned(FOnError) then FOnError(Self, esInit, RetVar);
+      end;
+    end else
+    if Assigned(FOnError) then
+      FOnError(Self, esInit, RetVar);
+  end else
+  if Assigned(FOnError) then
+    FOnError(Self, esInit, RetVar);
 end;
 
 function TPCSCConnector.Open: boolean;
-var
-  ThreadID    : LongWord;
 begin
+  if FNotifyHandle = 0 then
+    raise Exception.Create('Not initialized yet!');
+
   CloseAndDisconnect;
-  if (FUseReaderNum > NOREADERSELECTED) and
+
+  if (FSelectedReaderIndex > NOREADERSELECTED) and
      (SCardIsValidContext(FContext) = SCARD_S_SUCCESS) then
-    begin
-    ReaderOpen      := true;
-    ActReaderState  := SCARD_STATE_UNAWARE;
-    LastReaderState := SCARD_STATE_UNAWARE;
-    BeginThread(nil, 0, CardWatcherThread, @FContext, 0, ThreadID);
+  begin
+    ResetReaderStatVars;
+
+    FReaderWatcher := TReaderWatcher.Create(self);
+    FReaderWatcher.OnTerminate := DoOnTerminateWatcher;
+    FReaderWatcher.Suspended := false;
+
     Result := true;
-    end else Result := false;
+  end else
+    Result := false;
+end;
+
+procedure TPCSCConnector.DoOnTerminateWatcher(Sender: TObject);
+begin
+  if FReaderWatcher = Sender then
+    FReaderWatcher := nil;
 end;
 
 procedure TPCSCConnector.Close;
 begin
-  ReaderOpen := false;
+  if Assigned(FReaderWatcher) then
+  begin
+    FReaderWatcher.Terminate;
+    FReaderWatcher := nil;
+  end;
+
+  ResetReaderStatVars;
+
   SCardCancel(FContext);
-  if FConnected then Disconnect;
+
+  if CardConnected then
+    DisconnectCard;
 end;
 
-function TPCSCConnector.Connect: boolean;
+procedure TPCSCConnector.ConnectCard;
 begin
-  if FConnected then Disconnect;
-  if FUseReaderNum > NOREADERSELECTED then
-    if ConnectSelectedReader then FConnected := true
-                             else FConnected := false;
-  Result := FConnected;
-end;
-
-procedure TPCSCConnector.Disconnect;
-begin
-  if FConnected then
+  if not CardConnected then
+  begin
+    if FSelectedReaderIndex > NOREADERSELECTED then
     begin
-    SCardDisconnect(FCardHandle, SCARD_RESET_CARD);
-    FConnected  := false;
-    FCardHandle := 0;
+      ConnectCardInSelectedReader;
     end;
+  end;
+end;
+
+procedure TPCSCConnector.DisconnectCard;
+begin
+  if CardConnected then
+  begin
+    SCardDisconnect(FCardHandle, SCARD_RESET_CARD);
+    FCardHandle := 0;
+  end;
 end;
 
 procedure TPCSCConnector.CloseAndDisconnect;
 begin
-  if FConnected then Disconnect;
-  if ReaderOpen then Close;
+  if CardConnected then
+    DisconnectCard;
+
+  if IsReaderOpen then
+    Close;
 end;
 
-function TPCSCConnector.ConnectSelectedReader: boolean;
+function TPCSCConnector.ConnectCardInSelectedReader: boolean;
 var
   RetVar : cardinal;
 begin
-  RetVar := SCardConnectA(FContext,
-                          SelectedReader,
+  RetVar := SCardConnectW(FContext,
+                          PChar(SelectedReaderName),
                           SCARD_SHARE_EXCLUSIVE,
                           SCARD_PROTOCOL_Tx,
                           FCardHandle,
                           @FAttrProtocol);
   case RetVar of
-    SCARD_S_SUCCESS      : begin
-                           CardActiveAction;
-                           Result := true;
-                           end;
-    SCARD_W_REMOVED_CARD : begin
-                           Result := true;
-                           end;
-    else                   begin
-                           Result := false;
-                           if Assigned(FOnError) then FOnError(Self, esConnect, RetVar);
-                           end;
+    SCARD_S_SUCCESS:
+      begin
+        CardActiveAction;
+        Result := true;
+      end;
+
+    SCARD_W_REMOVED_CARD:
+      begin
+        Result := true;
+      end;
+
+    else begin
+      Result := false;
+
+      if Assigned(FOnError) then
+        FOnError(Self, esConnect, RetVar);
     end;
+  end;
 end;
 
-procedure TPCSCConnector.ProcessReaderState(const OldState,NewState: cardinal);
+procedure TPCSCConnector.ProcessReaderState(const OldState, NewState: cardinal);
 var
   CardInOld, CardInNew     : boolean;
   ReaderEmOld, ReaderEmNew : boolean;
   CardMuteOld, CardMuteNew : boolean;
   CardIgnore               : boolean;
-
 begin
-CardInOld   := (OldState and SCARD_STATE_PRESENT) > 0;
-CardInNew   := (NewState and SCARD_STATE_PRESENT) > 0;
-ReaderEmOld := (OldState and SCARD_STATE_EMPTY) > 0;
-ReaderEmNew := (NewState and SCARD_STATE_EMPTY) > 0;
-CardMuteOld := (OldState and SCARD_STATE_MUTE) > 0;
-CardMuteNew := (NewState and SCARD_STATE_MUTE) > 0;
-CardIgnore  := (NewState and SCARD_STATE_IGNORE) > 0;
+  CardInOld   := (OldState and SCARD_STATE_PRESENT) > 0;
+  CardInNew   := (NewState and SCARD_STATE_PRESENT) > 0;
+  ReaderEmOld := (OldState and SCARD_STATE_EMPTY) > 0;
+  ReaderEmNew := (NewState and SCARD_STATE_EMPTY) > 0;
+  CardMuteOld := (OldState and SCARD_STATE_MUTE) > 0;
+  CardMuteNew := (NewState and SCARD_STATE_MUTE) > 0;
+  CardIgnore  := (NewState and SCARD_STATE_IGNORE) > 0;
 
-if CardMuteNew     and
-   not CardMuteold then if Assigned(FOnCardInvalid) then FOnCardInvalid(Self);
+  FLastReaderState := NewState;
 
-if CardInNew       and
-   not CardInOld   and
-   not CardMuteNew and
-   not CardIgnore  then CardInsertedAction;
+  if (CardMuteNew and not CardMuteold) and Assigned(FOnCardInvalid) then
+    FOnCardInvalid(Self);
 
-if CardInOld     and
-   not CardInNew then CardRemovedAction;
+  if CardInNew and (not CardInOld) and (not CardMuteNew) and (not CardIgnore) then
+    CardInsertedAction;
 
-if ReaderEmNew     and
-   not ReaderEmOld then begin
-                        if Assigned(FOnReaderWaiting) then FOnReaderWaiting(Self);
-                        end;
+  if CardInOld and not CardInNew then
+    CardRemovedAction;
 
-LastReaderState := NewState;
+  if ReaderEmNew and not ReaderEmOld and Assigned(FOnReaderWaiting) then
+  begin
+    FOnReaderWaiting(Self);
+  end;
 end;
 
 procedure TPCSCConnector.CardInsertedAction;
 begin
-  if Assigned(FOnCardInserted) then FOnCardInserted(Self);
-  if FConnected then CardActiveAction;
+  if CardConnected then
+    CardActiveAction;
+
+  if Assigned(FOnCardInserted) then
+    FOnCardInserted(Self);
 end;
 
 procedure TPCSCConnector.CardActiveAction;
 begin
   GetReaderAttributes;
+
   if FAttrProtocol <> SCARD_PROTOCOL_UNK then
-    begin
+  begin
     GetCardAttributes;
-    if Assigned(FOnCardActive) then FOnCardActive(Self);
-    end;
+
+    if Assigned(FOnCardActive) then
+      FOnCardActive(Self);
+  end;
 end;
 
 procedure TPCSCConnector.CardRemovedAction;
 begin
   ClearReaderAttributes;
   ClearCardAttributes;
-  if Assigned(FOnCardRemoved) then FOnCardRemoved(Self);
-  Disconnect;
+
+  if Assigned(FOnCardRemoved) then
+    FOnCardRemoved(Self);
+
+  DisconnectCard;
 end;
 
-procedure TPCSCConnector.SetReaderNum(Value: Integer);
+procedure TPCSCConnector.SetSelectedReaderIndex(Value: Integer);
 begin
-  if Value <> FUseReaderNum then
-    begin
+  if Value <> FSelectedReaderIndex then
+  begin
     CloseAndDisconnect;
+
     if Value < FReaderList.Count then
-      begin
-      SelectedReader := PChar(FReaderList[Value]);
-      FUseReaderNum   := Value;
-      end else
-      begin
-      SelectedReader := '';
-      FUseReaderNum   := -1;
-      end;
+    begin
+      FSelectedReaderIndex := Value;
+    end else
+    begin
+      FSelectedReaderIndex := -1;
     end;
+  end;
 end;
 
 function TPCSCConnector.IsReaderOpen: boolean;
 begin
-  Result := ReaderOpen;
+  Result := Assigned(FReaderWatcher) and not FReaderWatcher.Terminated;
 end;
 
 function TPCSCConnector.GetReaderState: cardinal;
 begin
-  Result := ActReaderState;
+  Result := FActReaderState;
 end;
 
 procedure TPCSCConnector.GetReaderAttributes;
 var
   RetVar : cardinal;
-  ABuf   : string;
+  ABuf   : AnsiString;
   AIBuf  : integer;
   ALen   : integer;
 begin
-  ABuf := StringOfChar(#0, 127);
+  ABuf := StringOfChar(AnsiChar(#0), 127);
+
   ALen := Length(ABuf);
   RetVar := SCardGetAttrib(FCardHandle, SCARD_ATTR_ATR_STRING, Pointer(ABuf), @ALen);
-  if RetVar = SCARD_S_SUCCESS then FAttrCardATR := Copy(ABuf, 1, ALen)
-                              else FAttrCardATR := '';
+  if RetVar = SCARD_S_SUCCESS then
+    FAttrCardATR := Copy(ABuf, 1, ALen-1)
+  else
+    FAttrCardATR := '';
 
   ALen := Length(ABuf);
   RetVar := SCardGetAttrib(FCardHandle, SCARD_ATTR_VENDOR_NAME, Pointer(ABuf), @ALen);
-  if RetVar = SCARD_S_SUCCESS then FAttrVendorName := Copy(ABuf, 1, ALen)
-                              else FAttrVendorName := '';
+  if RetVar = SCARD_S_SUCCESS then
+    FAttrVendorName := Copy(ABuf, 1, ALen-1)
+  else
+    FAttrVendorName := '';
 
   ALen := Length(ABuf);
   RetVar := SCardGetAttrib(FCardHandle, SCARD_ATTR_VENDOR_IFD_SERIAL_NO, Pointer(ABuf), @ALen);
-  if RetVar = SCARD_S_SUCCESS then FAttrVendorSerial := Copy(ABuf, 1, ALen)
-                              else FAttrVendorSerial := '';
+  if RetVar = SCARD_S_SUCCESS then
+    FAttrVendorSerial := Copy(ABuf, 1, ALen-1)
+  else
+    FAttrVendorSerial := '';
 
   ALen := SizeOf(AIBuf);
   RetVar := SCardGetAttrib(FCardHandle, SCARD_ATTR_CURRENT_PROTOCOL_TYPE, @AIBuf, @ALen);
-  if RetVar = SCARD_S_SUCCESS then FAttrProtocol := AIBuf
-                              else FAttrProtocol := 0;
+  if RetVar = SCARD_S_SUCCESS then
+    FAttrProtocol := AIBuf
+  else
+    FAttrProtocol := 0;
 
   ALen := SizeOf(AIBuf);
   AIBuf := 0;
   RetVar := SCardGetAttrib(FCardHandle, SCARD_ATTR_ICC_TYPE_PER_ATR, @AIBuf, @ALen);
-  if RetVar = SCARD_S_SUCCESS then begin
-                                   case AIBuf of
-                                     1  : FAttrICCType := 'ISO7816A';
-                                     2  : FAttrICCType := 'ISO7816S';
-                                     else FAttrICCType := 'UNKNOWN';
-                                     end;
-                                   end
-                              else FAttrICCType := '';
+  if RetVar = SCARD_S_SUCCESS then
+  begin
+    case AIBuf of
+      1: FAttrICCType := 'ISO7816A';
+      2: FAttrICCType := 'ISO7816S';
+      else FAttrICCType := 'UNKNOWN';
+    end;
+  end else
+    FAttrICCType := '';
 end;
 
 procedure TPCSCConnector.GetCardAttributes;
 begin
-if GSMSelect(DFgsm900) = GSMStatusOK then
+  if SelectFile(DFgsm900) = CardStatusOK then
   begin
-  FGSMVoltage30 := (OrdD(FGSMDirInfo, 14) and $10) > 0;
-  FGSMVoltage18 := (OrdD(FGSMDirInfo, 14) and $20) > 0;
+    FVoltage30 := (OrdD(FDirInfo, 14) and $10) > 0;
+    FVoltage18 := (OrdD(FDirInfo, 14) and $20) > 0;
   end;
+end;
+
+function TPCSCConnector.GetIsCardConnected: boolean;
+begin
+  Result := FCardHandle <> 0;
 end;
 
 procedure TPCSCConnector.ClearReaderAttributes;
@@ -573,126 +613,202 @@ end;
 
 procedure TPCSCConnector.ClearCardAttributes;
 begin
-  FGSMCurrentFile := '';
-  FGSMFileInfo    := '';
-  FGSMDirInfo     := '';
-  FGSMVoltage30   := false;
-  FGSMVoltage18   := false;
+  FCurrentFile := '';
+  FFileInfo    := '';
+  FDirInfo     := '';
+  FVoltage30   := false;
+  FVoltage18   := false;
 end;
 
-function TPCSCConnector.GetResponseFromCard(const APdu: string): string;
+function TPCSCConnector.GetResponseFromCard(const APdu: RawByteString): RawByteString;
 var
-  RetVar : cardinal;
-  SBuf   : string;
+  RetVar : LongInt;
+  SBuf   : TBytes;
   SLen   : cardinal;
-  RBuf   : string;
+  RBuf   : TBytes;
   RLen   : cardinal;
   Ppci   : Pointer;
 begin
-SBuf := APdu;
-RBuf := StringOfChar(#0,MAXAPDULENGTH);
-if Length(SBuf) <= MAXAPDULENGTH then
-  begin
-  case FAttrProtocol of
-    SCARD_PROTOCOL_T0 : Ppci := @SCARD_PCI_T0;
-    SCARD_PROTOCOL_T1 : Ppci := @SCARD_PCI_T1;
-    else                Ppci := nil;
-    end;
   SLen := Length(APdu);
+  SetLength(SBuf, SLen);
+  Move(APdu[1], SBuf[0], SLen);
+
+  SetLength(RBuf, MAXAPDULENGTH);
   RLen := Length(RBuf);
-  RetVar := SCardTransmit(FCardHandle, Ppci, Pointer(SBuf), SLen, nil, Pointer(RBuf), @RLen);
-  if RetVar = SCARD_S_SUCCESS then
+  ZeroMemory(@RBuf[0], RLen);
+
+  if Length(SBuf) <= MAXAPDULENGTH then
+  begin
+    case FAttrProtocol of
+      SCARD_PROTOCOL_T0 : Ppci := @SCARD_PCI_T0;
+      SCARD_PROTOCOL_T1 : Ppci := @SCARD_PCI_T1;
+      else                Ppci := nil;
+    end;
+
+    RetVar := SCardTransmit(FCardHandle, Ppci, @SBuf[0], SLen, nil, @RBuf[0], @RLen);
+    if RetVar = SCARD_S_SUCCESS then
     begin
-    Result := Copy(RBuf,1,RLen);
-    end else
+      SetLength(Result, RLen);
+      Move(RBuf[0], Result[1], RLen);
+    end
+    else
     begin
-    Result := '';
-    if Assigned(FOnError) then FOnError(Self, esTransmit, RetVar);
+      Result := '';
+      if Assigned(FOnError) then FOnError(Self, esTransmit, RetVar);
     end;
   end;
 end;
 
-function TPCSCConnector.GetResponseFromCard(const Command: string; var Data: string; var sw1, sw2: byte): boolean;
+function TPCSCConnector.GetResponseFromCard(const Command: RawByteString; var Data: RawByteString; var sw1, sw2: byte): boolean;
 var
-  Answer  : string;
-  AnswerL : integer;
+  Answer : RawByteString;
+  AnswerL: integer;
 begin
-Answer := GetResponseFromCard(Command + Data);
-AnswerL := Length(Answer);
-if AnswerL >= 2 then
+  Answer := GetResponseFromCard(Command + Data);
+  AnswerL := Length(Answer);
+  if AnswerL >= 2 then
   begin
-  Data := Copy(Answer, 1, AnswerL - 2);
-  sw1  := Ord(Answer[AnswerL - 1]);
-  sw2  := Ord(Answer[AnswerL]);
-  if sw1 = GSMStatusResponseData then
+    Data := Copy(Answer, 1, AnswerL - 2);
+    sw1  := Ord(Answer[AnswerL - 1]);
+    sw2  := Ord(Answer[AnswerL]);
+
+    if sw1 = CardStatusResponseData then
     begin
-    Data := Chr(sw2);
-    if not GetResponseFromCard(GCGetResponse, Data, sw1, sw2) then
+      Data := AnsiChar(sw2);
+
+      if not GetResponseFromCard(AnsiChar(CommandCls) + GCGetResponse, Data, sw1, sw2) then
       begin
-      Data := '';
-      sw1  := 0;
-      sw2  := 0;
-      Result := false;
-      end else Result := true;
-    end else Result := true;
+        Data := '';
+        sw1  := 0;
+        sw2  := 0;
+        Result := false;
+      end else
+        Result := true;
+    end else
+      Result := true;
   end else
   begin
-  Data := '';
-  sw1  := 0;
-  sw2  := 0;
-  Result := false;
+    Data := '';
+    sw1  := 0;
+    sw2  := 0;
+    Result := false;
   end;
 end;
 
-function TPCSCConnector.GSMStatus: integer;
-var
-  Answer   : string;
-  sw1, sw2 : byte;
+function TPCSCConnector.GetSelectedReaderName: String;
 begin
-  GetResponseFromCard(GCGetStatus, Answer, sw1, sw2);
-  Result := (sw1 shl 8) + sw2;
-  if Result = GSMStatusOK then
-    begin
-    FGSMDirInfo := Answer;
-    FGSMCurrentFile := Copy(Answer, 5, 2);
-    end else
-    begin
-    FGSMDirInfo := '';
-    end;
+  if (SelectedReaderIndex > -1) and (SelectedReaderIndex < ReaderList.Count) then
+    Result := ReaderList[SelectedReaderIndex]
+  else
+    Result := '';
 end;
 
-function TPCSCConnector.GSMSelect(const FileID: string): integer;
+function TPCSCConnector.CardStatus: integer;
 var
-  Answer   : string;
-  sw1, sw2 : byte;
+  Answer: RawByteString;
+  sw1, sw2: byte;
+begin
+  GetResponseFromCard(AnsiChar(CommandCls) + GCGetStatus, Answer, sw1, sw2);
+
+  Result := (sw1 shl 8) + sw2;
+
+  if Result = CardStatusOK then
+  begin
+    FDirInfo := Answer;
+    FCurrentFile := Copy(Answer, 5, 2);
+  end else
+  begin
+    FDirInfo := '';
+  end;
+end;
+
+function TPCSCConnector.SelectFile(const FileID: RawByteString): integer;
+var
+  Answer: RawByteString;
+  sw1, sw2: byte;
 begin
   Answer := FileID;
-  GetResponseFromCard(GCSelectFile, Answer, sw1, sw2);
+  GetResponseFromCard(AnsiChar(CommandCls) + GCSelectFile + AnsiChar(Length(FileID)), Answer, sw1, sw2);
+
   Result := (sw1 shl 8) + sw2;
-  if Result = GSMStatusOK then
-    begin
-    FGSMCurrentFile := Copy(Answer, 5, 2);
+
+  if Result = CardStatusOK then
+  begin
+    FCurrentFile := Copy(Answer, 5, 2);
+
     if OrdD(Answer, 7) = GSMFileTypeEF then
-      begin
-      FGSMFileInfo := Answer;
-      end else
-      begin
-      FGSMDirInfo := Answer;
-      end;
+    begin
+      FFileInfo := Answer;
+    end else
+    begin
+      FDirInfo := Answer;
     end;
+ end;
 end;
 
-function TPCSCConnector.GSMReadBinary(const Offset, Length: integer; var Data: string): integer;
+function TPCSCConnector.ReadBinary(const Offset, Length: integer; out Data: RawByteString): integer;
 var
-  Command  : string;
-  sw1, sw2 : byte;
+  Command: RawByteString;
+  sw1, sw2: byte;
 begin
-  Command := GCReadBinary + Chr(Offset div 256) + Chr(Offset mod 256) + Chr(Length mod 256);
+  Data := '';
+  Command := AnsiChar(CommandCls) + GCReadBinary + AnsiChar(Offset div 256) + AnsiChar(Offset mod 256) + AnsiChar(Length mod 256);
   GetResponseFromCard(Command, Data, sw1, sw2);
+
   Result := (sw1 shl 8) + sw2;
-  if Result = GSMStatusOK then
+end;
+
+{ TReaderWatcher }
+
+constructor TReaderWatcher.Create(AOwner: TPCSCConnector);
+begin
+  inherited Create(true);
+  FOwner := AOwner;
+end;
+
+procedure TReaderWatcher.Execute;
+var
+  RetVar   : cardinal;
+  RStates  : array[0..1] of SCARD_READERSTATEW;
+  SelReader: String;
+begin
+  FreeOnTerminate := true;
+
+  SelReader := FOwner.SelectedReaderName;
+
+  ZeroMemory(@RStates[0], SizeOf(SCARD_READERSTATEW));
+  RStates[0].szReader     := PChar(SelReader);
+  RStates[0].pvUserData   := nil;
+  RStates[0].dwEventState := FOwner.FActReaderState;
+
+  while (not Terminated) and FOwner.IsReaderOpen do
+  begin
+    if (SCardIsValidContext(FOwner.FContext) <> SCARD_S_SUCCESS) then
     begin
+      //RetVal := SCardEstablishContext(...);
+      Exit;
     end;
+
+    RetVar := SCardGetStatusChangeW(FOwner.FContext, 100, RStates, 1);
+
+    if not Terminated then
+    begin
+      case RetVar of
+        SCARD_E_TIMEOUT:;
+
+        SCARD_S_SUCCESS:
+          begin
+           if ((RStates[0].dwEventState and SCARD_STATE_CHANGED) <> 0) then
+           begin
+            RStates[0].dwCurrentState := RStates[0].dwEventState xor SCARD_STATE_CHANGED;
+            FOwner.FActReaderState := RStates[0].dwEventState;
+
+            PostMessage(FOwner.FNotifyHandle, WM_CARDSTATE, RetVar, 0);
+          end;
+        end;
+      end;
+    end;
+  end;
 end;
 
 end.

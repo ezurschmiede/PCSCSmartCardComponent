@@ -30,6 +30,7 @@ type
     Memo1: TMemo;
     Label13: TLabel;
     Label14: TLabel;
+    Button1: TButton;
     procedure pcscCardRemoved(Sender: TObject);
     procedure pcscError(Sender: TObject; ErrSource: TErrSource; ErrCode: Cardinal);
     procedure ShowData;
@@ -46,6 +47,7 @@ type
     procedure pcscReaderDisconnect(Sender: TObject);
     procedure pcscReaderListChange(Sender: TObject);
     procedure pcscReaderWaiting(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
   private
     { Private-Deklarationen }
   public
@@ -63,19 +65,25 @@ const
 
 HexChars    = '0123456789abcdefABCDEF';
 
-function Hex2Bin(input: string): string;
+function Hex2Bin(input: RawByteString): RawByteString;
 var
-hex, output: string;
-loop       : integer;
+  hex, output: RawByteString;
+  loop: integer;
 begin
-     for loop := 1 to Length(input) do if Pos(input[loop], hexchars) > 0 then hex := hex + AnsiUpperCase(input[loop]);
-     loop := 1;
-     if Length(hex) > 0 then
-        repeat
-        output := output + Chr(StrToInt('$'+Copy(hex,loop,2)));
-        loop := loop + 2;
-        until loop > Length(hex);
-     Result := output;
+ for loop := 1 to Length(input) do
+ begin
+  if Pos(input[loop], hexchars) > 0 then
+    hex := hex + AnsiUpperCase(input[loop]);
+ end;
+
+ loop := 1;
+ if Length(hex) > 0 then
+ repeat
+  output := output + AnsiChar(StrToInt('$'+Copy(hex,loop,2)));
+  loop := loop + 2;
+ until loop > Length(hex);
+
+ Result := output;
 end;
 
 function Bin2HexExt(const input:string; const spaces, upcase: boolean): string;
@@ -95,11 +103,11 @@ end;
 
 procedure TForm1.ShowData;
 begin
-label3.caption := IntToHex(pcsc.ReaderState,8);
-label4.caption := pcsc.AttrICCType;
-label5.caption := pcsc.AttrVendorName;
-label6.caption := pcsc.AttrVendorSerial;
-label14.caption := IntToHex(pcsc.AttrProtocol,8);
+  label3.caption := IntToHex(pcsc.ReaderState,8);
+  label4.caption := pcsc.AttrICCType;
+  label5.caption := pcsc.AttrVendorName;
+  label6.caption := pcsc.AttrVendorSerial;
+  label14.caption := IntToHex(pcsc.AttrProtocol,8);
 end;
 
 procedure TForm1.pcscCardRemoved(Sender: TObject);
@@ -117,8 +125,8 @@ end;
 
 procedure TForm1.bt_InitClick(Sender: TObject);
 begin
-pcsc.Init;
-pcsc.UseReaderNum := 0;
+  pcsc.Init;
+  pcsc.SelectedReaderIndex := 0;
 end;
 
 procedure TForm1.bt_OpenClick(Sender: TObject);
@@ -129,8 +137,10 @@ end;
 
 procedure TForm1.bt_ConnectClick(Sender: TObject);
 begin
-if pcsc.Connect then memo1.lines.add('CONNECT to ''' + IntToStr(pcsc.UseReaderNum) + ''' : OK')
-                else memo1.lines.add('CONNECT to ''' + IntToStr(pcsc.UseReaderNum) + ''' : NOT OK');
+  pcsc.ConnectCard;
+
+  if pcsc.CardConnected then memo1.lines.add('CONNECT to ''' + IntToStr(pcsc.SelectedReaderIndex) + ''' : OK')
+                else memo1.lines.add('CONNECT to ''' + IntToStr(pcsc.SelectedReaderIndex) + ''' : NOT OK');
 end;
 
 procedure TForm1.bt_CloseClick(Sender: TObject);
@@ -140,12 +150,41 @@ end;
 
 procedure TForm1.bt_DisconnectClick(Sender: TObject);
 begin
-pcsc.Disconnect;
+  pcsc.DisconnectCard;
 end;
 
 procedure TForm1.bt_SendClick(Sender: TObject);
 begin
 label2.caption := Bin2HexExt(pcsc.GetResponseFromCard(Hex2Bin('a0f2000016')), true, true);
+end;
+
+procedure TForm1.Button1Click(Sender: TObject);
+var
+  test: RawByteString;
+  OutStr: RawByteString;
+begin
+  pcsc.ConnectCard;
+  try
+    OutStr := '';
+
+    if pcsc.SelectFile(RawByteString(#$2F#$06)) = CardStatusOK then
+    begin
+      pcsc.ReadBinary(0, 84, test);
+      OutStr := OutStr + test;
+    end;
+
+  //  pcsc.GSMSelect(RawByteString('#$3f#$00'));
+
+    if pcsc.SelectFile(RawByteString(#$2F#$07)) = CardStatusOK then
+    begin
+      pcsc.ReadBinary(0, 95, test);
+      OutStr := OutStr + test;
+    end;
+  finally
+    pcsc.DisconnectCard;
+  end;
+
+  ShowMessage(OutStr);
 end;
 
 procedure TForm1.pcscCardActive(Sender: TObject);
@@ -156,8 +195,10 @@ end;
 
 procedure TForm1.pcscCardInserted(Sender: TObject);
 begin
-memo1.Lines.Add('OnCardInserted');
-ShowData;
+  memo1.Lines.Add('OnCardInserted');
+  ShowData;
+
+  Button1Click(nil);
 end;
 
 procedure TForm1.pcscCardInvalid(Sender: TObject);
