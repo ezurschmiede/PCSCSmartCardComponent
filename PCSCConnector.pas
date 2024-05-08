@@ -103,8 +103,8 @@ type
 
   TPCSCConnector = class(TComponent)
   private
-    FContext: cardinal;
-    FCardHandle: LongInt;
+    FContext: SCARDCONTEXT;
+    FCardHandle: SCARDHANDLE;
     FSelectedReaderIndex: integer;
     FReaderList: TStringlist;
     FAttrProtocol: integer;
@@ -270,7 +270,7 @@ end;
 
 procedure TPCSCConnector.ReleaseContext;
 begin
-  if SCardIsValidContext(FContext) = SCARD_S_SUCCESS then
+  if (FContext <> 0) and (SCardIsValidContext(FContext) = SCARD_S_SUCCESS) then
   begin
     SCardReleaseContext(FContext);
   end;
