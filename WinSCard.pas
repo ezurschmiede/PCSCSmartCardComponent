@@ -75,14 +75,13 @@ Notes:
 
 *)
 
-var
-   LPCBYTE: PUChar;
+type
+   LPCBYTE = PUChar;
    {$EXTERNALSYM LPCBYTE}
 
-   LPCVOID: Pointer;  { VOID *LPCVOID; }
+   LPCVOID = Pointer;  { VOID *LPCVOID; }
    {$EXTERNALSYM LPCVOID}
 
-type
    PSCARD_IO_REQUEST = ^SCARD_IO_REQUEST;
    {$EXTERNALSYM PSCARD_IO_REQUEST}
    SCARD_IO_REQUEST = record
@@ -100,17 +99,18 @@ type
 //      Smart Cards.
 //
 type
-   SCARDCONTEXT = DWORD;
+   SCARDCONTEXT = NativeUInt;
    {$EXTERNALSYM SCARDCONTEXT}
-   SCARDHANDLE = DWORD;
+   SCARDHANDLE = NativeUInt;
    {$EXTERNALSYM SCARDHANDLE}
 
-var
-   PSCARDCONTEXT, LPSCARDCONTEXT: ^SCARDCONTEXT; { SCARDCONTEXT * }
+   PSCARDCONTEXT = ^SCARDCONTEXT;
+   LPSCARDCONTEXT = ^SCARDCONTEXT; { SCARDCONTEXT * }
    {$EXTERNALSYM PSCARDCONTEXT}
    {$EXTERNALSYM LPSCARDCONTEXT}
 
-   PSCARDHANDLE, LPSCARDHANDLE: ^SCARDHANDLE; { SCARDHANDLE * }
+   PSCARDHANDLE = ^SCARDHANDLE;
+   LPSCARDHANDLE = ^SCARDHANDLE; { SCARDHANDLE * }
    {$EXTERNALSYM PSCARDHANDLE}
    {$EXTERNALSYM LPSCARDHANDLE}
 
@@ -142,11 +142,11 @@ type
    TSCardIsValidContext = function (hContext: LongInt): LongInt; stdcall;
 {$ELSE}
    function SCardEstablishContext(dwScope: DWORD; pvReserved1: Pointer; pvReserved2: Pointer;
-                                  phContext: Pointer): LongInt; stdcall;
+                                  phContext: LPSCARDCONTEXT): LongInt; stdcall;
    {$EXTERNALSYM SCardEstablishContext}
-   function SCardReleaseContext(hContext: LongInt): LongInt; stdcall;
+   function SCardReleaseContext(hContext: SCARDCONTEXT): LongInt; stdcall;
    {$EXTERNALSYM SCardReleaseContext}
-   function SCardIsValidContext(hContext: LongInt): LongInt; stdcall;
+   function SCardIsValidContext(hContext: SCARDCONTEXT): LongInt; stdcall;
    {$EXTERNALSYM SCardIsValidContext}
 {$ENDIF}
 
@@ -212,9 +212,9 @@ type
    {$ENDIF}
 
 {$ELSE}
-   function SCardListReaderGroupsA(hContext: LongInt; mszGroups: LPStr; var pcchGroups: LongInt): LongInt; stdcall;
+   function SCardListReaderGroupsA(hContext: SCARDCONTEXT; mszGroups: LPStr; var pcchGroups: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardListReaderGroupsA}
-   function SCardListReaderGroupsW(hContext: LongInt; mszGroups: LPWStr; var pcchGroups: LongInt): LongInt; stdcall;
+   function SCardListReaderGroupsW(hContext: SCARDCONTEXT; mszGroups: LPWStr; var pcchGroups: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardListReaderGroupsW}
 
    function SCardListReadersA(SCARDCONTEXT: LongInt; mszGroups: LPStr; mszReaders: LPStr;
@@ -224,10 +224,10 @@ type
                               var pcchReaders: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardListReadersW}
 
-   function SCardListCardsA(hContext: LongInt; var pbAtr: Byte; var rgguidInterfaces: GUID;
+   function SCardListCardsA(hContext: SCARDCONTEXT; var pbAtr: Byte; var rgguidInterfaces: GUID;
                             cguidInterfaceCount: LongInt; mszCards: LPStr; var pcchCards: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardListCardsA}
-   function SCardListCardsW(hContext: LongInt; var pbAtr: Byte; var rgguidInterfaces: GUID;
+   function SCardListCardsW(hContext: SCARDCONTEXT; var pbAtr: Byte; var rgguidInterfaces: GUID;
                             cguidInterfaceCount: LongInt; mszCards: LPWStr; var pcchCards: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardListCardsW}
 
@@ -745,24 +745,24 @@ type
 
    TSCardEndTransaction = function (hCard: LongInt; dwDisposition: LongInt): LongInt; stdcall;
 {$ELSE}
-   function SCardConnectA(hContext: LongInt; szReader: LPStr; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
+   function SCardConnectA(hContext: SCARDCONTEXT; szReader: LPStr; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
                           var phCard: LongInt; pdwActiveProtocol: PDword): LongInt; stdcall;
    {$EXTERNALSYM SCardConnectA}
-   function SCardConnectW(hContext: LongInt; szReader: LPWStr; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
-                          var phCard: LongInt; pdwActiveProtocol: PDword): LongInt; stdcall;
+   function SCardConnectW(hContext: SCARDCONTEXT; szReader: LPWStr; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
+                          var phCard: SCARDHANDLE; pdwActiveProtocol: PDword): LongInt; stdcall;
    {$EXTERNALSYM SCardConnectW}
 
-   function SCardReconnect(hCard: LongInt; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
+   function SCardReconnect(hCard: SCARDHANDLE; dwShareMode: LongInt; dwPreferredProtocols: LongInt;
                            dwInitialization: LongInt; var pdwActiveProtocol: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardReconnect}
 
-   function SCardDisconnect(hCard: LongInt; dwDisposition: LongInt): LongInt; stdcall;
+   function SCardDisconnect(hCard: SCARDHANDLE; dwDisposition: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardDisconnect}
 
-   function SCardBeginTransaction(hCard: LongInt): LongInt; stdcall;
+   function SCardBeginTransaction(hCard: SCARDHANDLE): LongInt; stdcall;
    {$EXTERNALSYM SCardBeginTransaction}
 
-   function SCardEndTransaction(hCard: LongInt; dwDisposition: LongInt): LongInt; stdcall;
+   function SCardEndTransaction(hCard: SCARDHANDLE; dwDisposition: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardEndTransaction}
 {$ENDIF}
 
@@ -792,14 +792,14 @@ type
                               dwSendLength: DWORD; pioRecvPci: Pointer; pbRecvBuffer: PByte;
                               pcbRecvLength: PDWord): LongInt; stdcall;
 {$ELSE}
-   function SCardStatusA(hCard: LongInt; mszReaderNames: LPStr; var pcchReaderLen: LongInt; var pdwState: LongInt;
+   function SCardStatusA(hCard: SCARDHANDLE; mszReaderNames: LPStr; var pcchReaderLen: LongInt; var pdwState: LongInt;
                          pdwProtocol: PDWord; pbAtr: PByte; var pcbAtrLen: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardStatusA}
-   function SCardStatusW(hCard: LongInt; mszReaderNames: LPWStr; var pcchReaderLen: LongInt; var pdwState: LongInt;
+   function SCardStatusW(hCard: SCARDHANDLE; mszReaderNames: LPWStr; var pcchReaderLen: LongInt; var pdwState: LongInt;
                          pdwProtocol: PDWord; pbAtr: PByte; var pcbAtrLen: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardStatusW}
 
-   function SCardTransmit(hCard: LongInt; pioSendPci: Pointer; pbSendBuffer: PByte;
+   function SCardTransmit(hCard: SCARDHANDLE; pioSendPci: Pointer; pbSendBuffer: PByte;
                           dwSendLength: DWORD; pioRecvPci: Pointer; pbRecvBuffer: PByte;
                           pcbRecvLength: PDWord): LongInt; stdcall;
    {$EXTERNALSYM SCardTransmit}
@@ -822,7 +822,7 @@ type
 
    TSCardGetAttrib = function (hCard: LongInt; dwAttrId: LongInt; var pbAttr: PByte; var pcbAttrLen: LongInt): LongInt; stdcall;
 {$ELSE}
-   function SCardControl(hCard: LongInt; dwControlCode: LongInt; var pvInBuffer: PByte; cbInBufferSize: LongInt;
+   function SCardControl(hCard: SCARDHANDLE; dwControlCode: LongInt; var pvInBuffer: PByte; cbInBufferSize: LongInt;
                          var pvOutBuffer: PByte; cbOutBufferSize: LongInt;
                          var pcbBytesReturned: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardControl}
@@ -830,7 +830,7 @@ type
 // CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED
 // CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED
 
-   function SCardGetAttrib(hCard: LongInt; dwAttrId: LongInt; pbAttr: PByte; pcbAttrLen: PDWord): LongInt; stdcall;
+   function SCardGetAttrib(hCard: SCARDHANDLE; dwAttrId: LongInt; pbAttr: PByte; pcbAttrLen: PDWord): LongInt; stdcall;
    {$EXTERNALSYM SCardGetAttrib}
 
 // CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED CHANGED
@@ -856,7 +856,7 @@ type
 
    TSCardSetAttrib = function (hCard: LongInt; dwAttrId: LongInt; var pbAttr: PByte; cbAttrLen: LongInt): LongInt; stdcall;
 {$ELSE}
-   function SCardSetAttrib(hCard: LongInt; dwAttrId: LongInt; var pbAttr: PByte; cbAttrLen: LongInt): LongInt; stdcall;
+   function SCardSetAttrib(hCard: SCARDHANDLE; dwAttrId: LongInt; var pbAttr: PByte; cbAttrLen: LongInt): LongInt; stdcall;
    {$EXTERNALSYM SCardSetAttrib}
 {$ENDIF}
 
@@ -902,9 +902,9 @@ const
    {$EXTERNALSYM SCERR_NOGUIDS}
 
 type
-   LPOCNCONNPROCA = function(hSCardContext: LongInt; hCard: LPStr; pvUserData: Pointer): DWORD; cdecl;
+   LPOCNCONNPROCA = function(hSCardContext: SCARDCONTEXT; hCard: LPStr; pvUserData: Pointer): DWORD; cdecl;
    {$EXTERNALSYM LPOCNCONNPROCA}
-   LPOCNCONNPROCW = function(hSCardContext: LongInt; hCard: LPWStr; pvUserData: Pointer): DWORD; cdecl;
+   LPOCNCONNPROCW = function(hSCardContext: SCARDCONTEXT; hCard: LPWStr; pvUserData: Pointer): DWORD; cdecl;
    {$EXTERNALSYM LPOCNCONNPROCW}
    {$IFDEF UNICODE}
       LPOCNCONNPROC = LPOCNCONNPROCW;
@@ -913,9 +913,9 @@ type
    {$ENDIF}
    {$EXTERNALSYM LPOCNCONNPROC}
 
-   LPOCNCHKPROC = function(hContext: LongInt; hCard: LPStr; pvUserData: Pointer): Bool; cdecl;
+   LPOCNCHKPROC = function(hContext: SCARDCONTEXT; hCard: LPStr; pvUserData: Pointer): Bool; cdecl;
    {$EXTERNALSYM LPOCNCHKPROC}
-   LPOCNDSCPROC = procedure(hContext: LongInt; hCard: LPStr; pvUserData: Pointer); cdecl;
+   LPOCNDSCPROC = procedure(hContext: SCARDCONTEXT; hCard: LPStr; pvUserData: Pointer); cdecl;
    {$EXTERNALSYM LPOCNDSCPROC}
 
 //
